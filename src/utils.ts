@@ -470,6 +470,7 @@ export class Utils {
             "registry",
         ]);
 
+        console.log("Starting registry health check...");
         try {
             await execa(argv.containerExecutable, [
                 "run", "--rm",
@@ -487,6 +488,7 @@ export class Utils {
             }
             throw err;
         }
+        console.log("Registry started!");
     }
 
     static async stopDockerRegistry (containerExecutable: string): Promise<void> {
