@@ -479,7 +479,7 @@ export class Utils {
                 "curlimages/curl",
                 "-c", `until [ "$(curl -s -o /dev/null -k -w "%{http_code}" https://${this.gclRegistryPrefix}:443)" = "200" ]; do sleep 1; done;`,
             ], {
-                timeout: 4000,
+                timeout: 15000,
             });
         } catch (err) {
             await this.stopDockerRegistry(argv.containerExecutable);
