@@ -1589,6 +1589,12 @@ If you know what you're doing and would like to suppress this warning, use one o
             }
         }
 
+        if (this.argv.registry) {
+            dockerCmd += `--network ${Utils.gclRegistryPrefix}.net `;
+            dockerCmd += `--volume ${Utils.gclRegistryPrefix}.certs:/etc/containers/certs.d:ro `;
+            dockerCmd += `--volume ${Utils.gclRegistryPrefix}.certs:/etc/docker/certs.d:ro `;
+        }
+
         const serviceName = service.name;
         const aliases = Utils.getAllServiceAliases(service);
 
@@ -1665,7 +1671,11 @@ If you know what you're doing and would like to suppress this warning, use one o
                 .map((port) => {
                     const portNum = Number.parseInt(port.replace("/tcp", ""));
                     const containerName = `gcl-wait-for-it-${this.jobId}-${serviceIndex}-${portNum}`;
-                    const spawnCmd = [this.argv.containerExecutable, "run", "--rm", `--name=${containerName}`, "--network", `${this._serviceNetworkId}`, `${waitImageName}`, `${serviceAlias}:${portNum}`, "-t", `${waitForServicesTimeout}`];
+                    const spawnCmd = [this.argv.containerExecutable, "run", "--rm", `--name=${containerName}`, "--network", `${this._serviceNetworkId}`];
+                    if (this.argv.registry) {
+                        spawnCmd.push("--network", `${Utils.gclRegistryPrefix}.net`);
+                    }
+                    spawnCmd.push(`${waitImageName}`, `${serviceAlias}:${portNum}`, "-t", `${waitForServicesTimeout}`);
                     this._containersToClean.push(containerName);
                     return Utils.spawn(spawnCmd);
                 }));
