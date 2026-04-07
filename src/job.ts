@@ -4,6 +4,7 @@ import fs from "fs-extra";
 import prettyHrtime from "pretty-hrtime";
 import split2 from "split2";
 import {Utils} from "./utils.js";
+import {Registry} from "./registry.js";
 import {WriteStreams} from "./write-streams.js";
 import {GitData} from "./git-data.js";
 import assert, {AssertionError} from "node:assert";
@@ -127,6 +128,7 @@ export class Job {
     private _ciProjectDir: string | null = null;
     private _startTime?: [number, number];
     private _endTime?: [number, number];
+    private _registry: Registry | null = null;
 
     private readonly _filesToRm: string[] = [];
     private readonly _globalVariables: {[key: string]: string} = {};
@@ -349,7 +351,7 @@ If you know what you're doing and would like to suppress this warning, use one o
             predefinedVariables["CI_NODE_INDEX"] = `${opt.nodeIndex}`;
         }
         predefinedVariables["CI_NODE_TOTAL"] = `${opt.nodesTotal}`;
-        predefinedVariables["CI_REGISTRY"] = predefinedVariables["CI_REGISTRY"] = this.argv.registry ? Utils.gclRegistryPrefix : `local-registry.${this.gitData.remote.host}`;
+        predefinedVariables["CI_REGISTRY"] = `local-registry.${this.gitData.remote.host}`;
         predefinedVariables["CI_REGISTRY_IMAGE"] = `$CI_REGISTRY/${predefinedVariables["CI_PROJECT_PATH"].toLowerCase()}`;
         return predefinedVariables;
     }
@@ -651,6 +653,16 @@ If you know what you're doing and would like to suppress this warning, use one o
         return this._globalVariables;
     }
 
+    set registry (registry: Registry) {
+        assert(this._registry == null, "this._registry can only be set once");
+        this._registry = registry;
+        this._variables["CI_REGISTRY"] = this._registry.prefix;
+    }
+    get registry () {
+        assert(this._registry, "attempted to access this._registry before it is initialized");
+        return this._registry;
+    }
+
     async start (): Promise<void> {
         if (this.trigger) {
             await this.startTriggerPipeline();
@@ -926,9 +938,9 @@ If you know what you're doing and would like to suppress this warning, use one o
             });
         }
 
-        if (this.argv.registry) {
-            expanded["CI_REGISTRY_USER"] = expanded["CI_REGISTRY_USER"] ?? `${Utils.gclRegistryPrefix}.user`;
-            expanded["CI_REGISTRY_PASSWORD"] = expanded["CI_REGISTRY_PASSWORD"] ?? `${Utils.gclRegistryPrefix}.password`;
+        if (this.registry) {
+            expanded["CI_REGISTRY_USER"] = expanded["CI_REGISTRY_USER"] ?? `${this.registry.prefix}.user`;
+            expanded["CI_REGISTRY_PASSWORD"] = expanded["CI_REGISTRY_PASSWORD"] ?? `${this.registry.prefix}.password`;
         }
 
         this.refreshLongRunningSilentTimeout(writeStreams);
@@ -1003,10 +1015,10 @@ If you know what you're doing and would like to suppress this warning, use one o
                 dockerCmd += `--network ${this._serviceNetworkId} --network-alias build `;
             }
 
-            if (this.argv.registry) {
-                dockerCmd += `--network ${Utils.gclRegistryPrefix}.net `;
-                dockerCmd += `--volume ${Utils.gclRegistryPrefix}.certs:/etc/containers/certs.d:ro `;
-                dockerCmd += `--volume ${Utils.gclRegistryPrefix}.certs:/etc/docker/certs.d:ro `;
+            if (this.registry) {
+                dockerCmd += `--network ${this.registry.network} `;
+                dockerCmd += `--volume ${this.registry.certDirectory}:/etc/containers/certs.d/${this.registry.prefix}:ro `;
+                dockerCmd += `--volume ${this.registry.certDirectory}:/etc/docker/certs.d/${this.registry.prefix}:ro `;
             }
 
             dockerCmd += `--volume ${buildVolumeName}:${this.ciProjectDir} `;
@@ -1242,6 +1254,10 @@ If you know what you're doing and would like to suppress this warning, use one o
             writeStreams.stdout(chalk`${this.formattedJobName} {magentaBright pulled} ${imageToPull} in {magenta ${prettyHrtime(endTime)}}\n`);
             this.refreshLongRunningSilentTimeout(writeStreams);
         };
+
+        if (this.registry) {
+            this.registry.pull(imageToPull);
+        }
 
         if (pullPolicy === "always") {
             await actualPull();
@@ -1589,10 +1605,10 @@ If you know what you're doing and would like to suppress this warning, use one o
             }
         }
 
-        if (this.argv.registry) {
-            dockerCmd += `--network ${Utils.gclRegistryPrefix}.net `;
-            dockerCmd += `--volume ${Utils.gclRegistryPrefix}.certs:/etc/containers/certs.d:ro `;
-            dockerCmd += `--volume ${Utils.gclRegistryPrefix}.certs:/etc/docker/certs.d:ro `;
+        if (this.registry) {
+            dockerCmd += `--network ${this.registry.network} `;
+            dockerCmd += `--volume ${this.registry.certDirectory}:/etc/containers/certs.d/${this.registry.prefix}:ro `;
+            dockerCmd += `--volume ${this.registry.certDirectory}:/etc/docker/certs.d/${this.registry.prefix}:ro `;
         }
 
         const serviceName = service.name;
@@ -1672,8 +1688,8 @@ If you know what you're doing and would like to suppress this warning, use one o
                     const portNum = Number.parseInt(port.replace("/tcp", ""));
                     const containerName = `gcl-wait-for-it-${this.jobId}-${serviceIndex}-${portNum}`;
                     const spawnCmd = [this.argv.containerExecutable, "run", "--rm", `--name=${containerName}`, "--network", `${this._serviceNetworkId}`];
-                    if (this.argv.registry) {
-                        spawnCmd.push("--network", `${Utils.gclRegistryPrefix}.net`);
+                    if (this.registry) {
+                        spawnCmd.push("--network", this.registry.network);
                     }
                     spawnCmd.push(`${waitImageName}`, `${serviceAlias}:${portNum}`, "-t", `${waitForServicesTimeout}`);
                     this._containersToClean.push(containerName);

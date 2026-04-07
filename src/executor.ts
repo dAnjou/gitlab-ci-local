@@ -1,5 +1,6 @@
 import chalk from "chalk-template";
 import {Job} from "./job.js";
+import {Registry} from "./registry.js";
 import assert, {AssertionError} from "node:assert";
 import {Argv} from "./argv.js";
 import pMap from "p-map";
@@ -8,14 +9,26 @@ export class Executor {
 
     static async runLoop (argv: Argv, jobs: ReadonlyArray<Job>, stages: readonly string[], potentialStarters: Job[]) {
         let startCandidates: Job[];
+        let registry = null;
 
         do {
             startCandidates = Executor.getStartCandidates(jobs, stages, potentialStarters, argv.manual);
             if (startCandidates.length > 0) {
+                if (argv.registry && !registry) {
+                    registry = new Registry(argv);
+                    registry.start();
+                }
+                startCandidates.forEach(startCandidate => {
+                    startCandidate.registry = registry;
+                });
                 const mapper = async (startCandidate: Job) => startCandidate.start();
                 await pMap(startCandidates, mapper, {concurrency: argv.concurrency ?? startCandidates.length});
             }
         } while (startCandidates.length > 0);
+
+        if (registry) {
+            registry.stop();
+        }
     }
 
     static getStartCandidates (jobs: ReadonlyArray<Job>, stages: readonly string[], potentialStarters: readonly Job[], manuals: string[]) {

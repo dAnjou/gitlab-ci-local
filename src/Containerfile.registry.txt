@@ -1,0 +1,17 @@
+FROM registry
+
+RUN apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/testing mkcert
+
+RUN mkdir "/certs"
+
+ENV REGISTRY_HTTP_ADDR="0.0.0.0:443"
+ENV REGISTRY_HTTP_TLS_CERTIFICATE="/certs/client.cert"
+ENV REGISTRY_HTTP_TLS_KEY="/certs/client.key"
+
+RUN printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
+  '#!/bin/sh' \
+  'set -e' \
+  'mkcert -cert-file $REGISTRY_HTTP_TLS_CERTIFICATE -key-file $REGISTRY_HTTP_TLS_KEY $(hostname) $(hostname -i)' \
+  'cp "$(mkcert -CAROOT)/rootCA.pem" /certs/ca.crt' \
+  'chmod -R a+r /certs' \
+  "$(tail +2 /entrypoint.sh)" > /entrypoint.sh
